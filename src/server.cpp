@@ -148,15 +148,14 @@ void clientSession(int client_socket) {
         }
 
         if (input == "/users") {
-            std::string users;
+            std::string users = "Users: \n";
             {
                 std::lock_guard<std::mutex> lock(clients_mutex);
                 for (int client : clients) {
-                    users = "Users: \n";
                     users += "- " + usernames[client] + "\n";
                 }
             }
-            send (client_socket, users.c_str(), users.size(), 0);
+            send (client_socket, users.c_str(), users.size() + 1, 0);
             continue;
         }
 
