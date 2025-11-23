@@ -1,14 +1,18 @@
 #include <iostream>
 #include <vector>
+#include <unordered_map>
 #include <thread>
 #include <mutex>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <unistd.h>
+#include <ctime>
 
 std::vector<int> clients;
 std::mutex clients_mutex;
+std::unordered_map<int, std::string> usernames;
 
+std::string getTime();
 void clientSession(int client_socket);
 
 int main() {
@@ -65,6 +69,20 @@ int main() {
 
 void clientSession(int client_socket) {
     char buffer[4096];
+    char name[64];
+
+    long name_received = recv(client_socket, name, sizeof(name), 0);
+    if (name_received == -1) {
+        std::cerr << "Receive name failed" << std::endl;
+        close(client_socket);
+        return;
+    }
+    name[name_received] = '\0';
+
+    {
+        std::lock_guard<std::mutex> lock(clients_mutex);
+        usernames[client_socket] = name;
+    }
 
     while (true) {
         memset(buffer, 0, sizeof(buffer));
@@ -76,21 +94,92 @@ void clientSession(int client_socket) {
                 clients.erase(
                     std::remove(clients.begin(), clients.end(), client_socket),
                     clients.end()
+
                 );
+                usernames.erase(client_socket);
             }
             close(client_socket);
             std::cerr << "Receive failed" << std::endl;
             return;
         }
-        std::cout << "Client: " << buffer << std::endl;
-        {
+
+        std::string input = buffer;
+        // exit command
+        if (input == "/exit") {
+            std::string username = usernames[client_socket];
+            std::string message = "[" + username + "] left the chat";
+            {
+                std::lock_guard<std::mutex> lock(clients_mutex);
+                for (int client : clients) {
+                    if (client != client_socket) {
+                        send(client, message.c_str(), message.size(), 0);
+                    }
+                }
+            }
+
+            {
+                std::lock_guard<std::mutex> lock(clients_mutex);
+                clients.erase(
+                    std::remove(clients.begin(), clients.end(), client_socket),
+                    clients.end()
+
+                );
+                usernames.erase(client_socket);
+            }
+            close(client_socket);
+            std::cout << "Client exit" << std::endl;
+            return;
+        }
+
+        if (input.rfind("/name ", 0) == 0) {
+            std::string newUsername = input.substr(6);
+            std::string oldUsername = usernames[client_socket];
+            std::string message = "[" + oldUsername + "] has changed username to [" + newUsername + "]" ;
+            {
+                std::lock_guard<std::mutex> lock(clients_mutex);
+                for (int client : clients) {
+                    if (client != client_socket) {
+                        send(client, message.c_str(), message.size(), 0);
+                    }
+                }
+                usernames[client_socket] = newUsername;
+            }
+            continue;
+        }
+
+        if (input == "/users") {
+            std::string users;
+            {
+                std::lock_guard<std::mutex> lock(clients_mutex);
+                for (int client : clients) {
+                    users = "Users: \n";
+                    users += "- " + usernames[client] + "\n";
+                }
+            }
+            send (client_socket, users.c_str(), users.size(), 0);
+            continue;
+        }
+
+        { // sending messages
             std::lock_guard<std::mutex> lock(clients_mutex);
             for (int client : clients) {
                 if (client == client_socket) {
                     continue;
                 }
-                send(client, buffer, bytes_received, 0);
+                std::string username = usernames[client_socket];
+                std::string message = "[" + username + " | " + getTime() +"]: " + buffer;
+                send(client, message.c_str(), message.size(), 0);
             }
         }
     }
+}
+
+std::string getTime() {
+    time_t now = time(nullptr);
+    tm *ltm = localtime(&now);
+
+    char buf[16];
+    sprintf(buf, "%02d:%02d", ltm->tm_hour, ltm->tm_min);
+
+    return {buf};
 }

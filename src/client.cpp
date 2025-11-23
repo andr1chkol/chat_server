@@ -29,6 +29,12 @@ int main() {
         std::cerr << "Failed to connect to server" << std::endl;
         return 2;
     }
+
+    std::string name;
+    std::cout << "Enter your name: ";
+    getline(std::cin, name);
+    send(client_socket, name.c_str(), name.size()+1, 0);
+
     std::thread Listen(listenToServer, client_socket);
     std::thread Input(inputToServer, client_socket);
 
@@ -43,7 +49,6 @@ int main() {
 
 void listenToServer(int client_socket) {
     char buffer[4096];
-
     while (running) {
         memset(buffer, 0, sizeof(buffer));
         long bytes_received = recv(client_socket, buffer, sizeof(buffer), 0);
@@ -61,10 +66,12 @@ void inputToServer(int client_socket) {
     while (running) {
         std::string input;
         getline(std::cin, input);
-        send(client_socket, input.c_str(), input.size(), 0);
-        if (!std::cin) {
+        if (input == "/exit") {
             running = false;
+            send(client_socket, input.c_str(), input.size()+1, 0);
             return;
         }
+
+        send(client_socket, input.c_str(), input.size()+1, 0);
     }
 }
