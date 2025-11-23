@@ -9,7 +9,7 @@
 std::vector<int> clients;
 std::mutex clients_mutex;
 
-void handleClient(int client_socket);
+void clientSession(int client_socket);
 
 int main() {
     int server_socket = socket(AF_INET, SOCK_STREAM, 0);
@@ -56,35 +56,41 @@ int main() {
             clients.push_back(client_socket);
         }
 
-        std::thread clientThread(handleClient, client_socket);
+        std::thread clientThread(clientSession, client_socket);
         clientThread.detach();
     }
-
     close(server_socket);
     return 0;
 }
 
-void handleClient(int client_socket) {
+void clientSession(int client_socket) {
     char buffer[4096];
+
     while (true) {
         memset(buffer, 0, sizeof(buffer));
         long bytes_received = recv(client_socket, buffer, sizeof(buffer), 0);
+
         if (bytes_received <= 0) {
-            clients.erase(
-                std::remove(clients.begin(), clients.end(), client_socket),
-                clients.end()
-            );
+            {
+                std::lock_guard<std::mutex> lock(clients_mutex);
+                clients.erase(
+                    std::remove(clients.begin(), clients.end(), client_socket),
+                    clients.end()
+                );
+            }
             close(client_socket);
             std::cerr << "Receive failed" << std::endl;
             return;
         }
         std::cout << "Client: " << buffer << std::endl;
-        std::lock_guard<std::mutex> lock(clients_mutex);
-        for (int client : clients) {
-            if (client == client_socket) {
-                continue;
+        {
+            std::lock_guard<std::mutex> lock(clients_mutex);
+            for (int client : clients) {
+                if (client == client_socket) {
+                    continue;
+                }
+                send(client, buffer, bytes_received, 0);
             }
-            send(client, buffer, bytes_received, 0);
         }
     }
 }

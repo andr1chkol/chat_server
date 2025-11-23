@@ -3,6 +3,13 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <unistd.h>
+#include <thread>
+#include <atomic>
+#include <string>
+
+std::atomic<bool> running(true);
+void listenToServer(int client_socket);
+void inputToServer(int client_socket);
 
 int main() {
     int client_socket = socket(AF_INET, SOCK_STREAM, 0);
@@ -22,23 +29,42 @@ int main() {
         std::cerr << "Failed to connect to server" << std::endl;
         return 2;
     }
+    std::thread Listen(listenToServer, client_socket);
+    std::thread Input(inputToServer, client_socket);
 
+    Input.join();
+    running = false;
+    shutdown(client_socket, SHUT_RDWR);
+    Listen.join();
+
+    close(client_socket);
+    return 0;
+}
+
+void listenToServer(int client_socket) {
     char buffer[4096];
-    while (true) {
-        std::string input;
-        std::getline(std::cin, input);
-        send(client_socket, input.c_str(), input.size(), 0);
 
+    while (running) {
         memset(buffer, 0, sizeof(buffer));
         long bytes_received = recv(client_socket, buffer, sizeof(buffer), 0);
 
         if (bytes_received <= 0) {
-            std::cerr << "Receive failed" << std::endl;
-            break;
+            std::cerr << "Server Disconnected" << std::endl;
+            running = false;
+            return;
         }
-        std::cout << "Server: " << buffer << std::endl;
+        std::cout << buffer << std::endl;
     }
+}
 
-    close(client_socket);
-    return 0;
+void inputToServer(int client_socket) {
+    while (running) {
+        std::string input;
+        getline(std::cin, input);
+        send(client_socket, input.c_str(), input.size(), 0);
+        if (!std::cin) {
+            running = false;
+            return;
+        }
+    }
 }
