@@ -40,36 +40,27 @@ int main() {
 
     sockaddr_in client_address{};
     socklen_t client_size = sizeof(client_address);
-    int client_socket = accept(server_socket, reinterpret_cast<sockaddr *>(&client_address), &client_size);
 
-    if (client_socket == -1) {
-        std::cerr << "Accept failed" << std::endl;
-        close(server_socket);
-        return 1;
-    }
-    std::cout << "Client connected" << std::endl;
-
-    {
-        std::lock_guard<std::mutex> lock(clients_mutex);
-        clients.push_back(client_socket);
-    }
-
-    std::thread clientThread(handleClient, client_socket);
-    clientThread.detach();
-
-    char buffer[4096];
     while (true) {
-        memset(buffer, 0, sizeof(buffer));
-        long bytes_received = recv(client_socket, buffer, sizeof(buffer), 0);
-        if (bytes_received <= 0) {
-            std::cerr << "Receive failed" << std::endl;
-            break;
+        int client_socket = accept(server_socket, reinterpret_cast<sockaddr *>(&client_address), &client_size);
+
+        if (client_socket == -1) {
+            std::cerr << "Accept failed" << std::endl;
+            close(server_socket);
+            return 1;
         }
-        std::cout << "Client: " << buffer << std::endl;
+        std::cout << "Client connected" << std::endl;
+
+        {
+            std::lock_guard<std::mutex> lock(clients_mutex);
+            clients.push_back(client_socket);
+        }
+
+        std::thread clientThread(handleClient, client_socket);
+        clientThread.detach();
     }
 
     close(server_socket);
-    close(client_socket);
     return 0;
 }
 
